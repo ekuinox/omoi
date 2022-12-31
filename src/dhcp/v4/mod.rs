@@ -25,9 +25,10 @@ pub async fn handle_request(
 ) -> Result<()> {
     dbg!(addr);
     let req = decode(&buffer)?;
-    let Some(v4::DhcpOption::MessageType(req_type)) = req.opts().get(OptionCode::MessageType) else {
+    let Some(req_type) = req.opts().msg_type() else {
         bail!("Message type is not included.");
     };
+    
 
     let mut opts = v4::DhcpOptions::new();
     if let Some(v4::DhcpOption::ParameterRequestList(params)) =
@@ -48,6 +49,7 @@ pub async fn handle_request(
     }
     dbg!(req.chaddr(), req_type);
 
+    // 後で消す
     if !req.chaddr().starts_with(&[0, 0, 0]) {
         bail!("not target");
     }
@@ -65,9 +67,10 @@ pub async fn handle_request(
     res.set_opcode(Opcode::BootReply)
         .set_htype(req.htype())
         .set_hops(0)
+        .set_xid(req.xid())
         .set_secs(0)
         .set_ciaddr(0)
-        .set_yiaddr(Ipv4Addr::new(192, 168, 0, 9))
+        .set_yiaddr(req.yiaddr())
         .set_flags(req.flags())
         .set_giaddr(req.giaddr())
         .set_chaddr(req.chaddr())
@@ -76,15 +79,28 @@ pub async fn handle_request(
 
     let mut buffer = Vec::with_capacity(1024);
     let mut encoder = Encoder::new(&mut buffer);
+    dbg!(&req, &res);
     res.encode(&mut encoder)?;
 
-    socket.send_to(&buffer,  (Ipv4Addr::new(255, 255, 255, 255), addr.port())).await?;
+    let (dest, is_unicast) = destination(&req, &res);
+    if is_unicast {
+        todo!()
+    }
+
+    socket.send_to(&buffer, (dest, v4::CLIENT_PORT)).await?;
 
     Ok(())
 }
 
+fn destination(req: &Message, res: &Message) -> (Ipv4Addr, bool) {
+    if req.ciaddr().is_unspecified() {
+        return (req.ciaddr(), false);
+    }
+    todo!()
+}
+
 pub async fn serve() -> Result<()> {
-    let socket = UdpSocket::bind("0.0.0.0:67").await?;
+    let socket = UdpSocket::bind((Ipv4Addr::new(0, 0, 0, 0), v4::SERVER_PORT)).await?;
     socket.set_broadcast(true)?;
     let socket = Arc::new(socket);
 
