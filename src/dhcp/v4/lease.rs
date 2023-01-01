@@ -1,7 +1,12 @@
-use std::net::Ipv4Addr;
+use std::{net::Ipv4Addr, ops::Add};
 
-use crate::conf::OMOI_CONFIG;
+use crate::{
+    conf::{Dhcp4SubnetConfig, OMOI_CONFIG},
+    db::Db,
+};
 use anyhow::{bail, Result};
+use chrono::{Duration, Local};
+use ipnet::Ipv4AddrRange;
 use mac_address::MacAddress;
 
 pub struct LeaseRequest {
@@ -32,16 +37,13 @@ impl LeaseRequest {
             .hosts
             .iter()
             .find(|host| host.hardware_ethernet == self.mac_address);
-        let host = match host {
-            Some(host) => host,
-            None => {
-                // TODO: 適当に割り当てる
-                bail!("Unimplemented");
-            }
+        let ip_addr = match host {
+            Some(host) => host.fixed_address,
+            None => get_new_ip(&subnet, self.mac_address)?,
         };
         let resp = LeasedResponse {
             mac_address: self.mac_address,
-            ip_addr: host.fixed_address,
+            ip_addr,
             broadcast_address: subnet.broadcast_address,
             subnet_mask: subnet.netmask,
             domain_name_servers: subnet.domain_name_servers.clone(),
@@ -50,4 +52,28 @@ impl LeaseRequest {
         };
         Ok(resp)
     }
+}
+
+fn get_free_ip(subnet: &Dhcp4SubnetConfig, mac_address: MacAddress) -> Result<Ipv4Addr> {
+    let db = Db::open().leased()?;
+    let range = Ipv4AddrRange::new(subnet.range.0, subnet.range.1);
+    for target in range {
+        let Ok(false) = db.is_exist(&target) else {
+            continue;
+        };
+        if let Ok(ip_addr) = db.lease(
+            target,
+            mac_address,
+            Local::now().add(Duration::seconds(subnet.address_lease_time as i64)),
+        ) {
+            return Ok(ip_addr);
+        }
+    }
+    bail!("No free ip")
+}
+
+fn get_new_ip(subnet: &Dhcp4SubnetConfig, mac_address: MacAddress) -> Result<Ipv4Addr> {
+    // TODO: とりあえず mac_address から過去に割り当たってないか探す
+    let ip = get_free_ip(subnet, mac_address)?;
+    Ok(ip)
 }
