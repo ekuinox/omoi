@@ -28,7 +28,6 @@ pub async fn handle_request(
     let Some(req_type) = req.opts().msg_type() else {
         bail!("Message type is not included.");
     };
-    
 
     let mut opts = v4::DhcpOptions::new();
     if let Some(v4::DhcpOption::ParameterRequestList(params)) =
@@ -47,34 +46,54 @@ pub async fn handle_request(
             }
         }
     }
-    dbg!(req.chaddr(), req_type);
 
     // 後で消す
     if !req.chaddr().starts_with(&[0, 0, 0]) {
         bail!("not target");
     }
 
+    let mut res = Message::default();
     match req_type {
         v4::MessageType::Discover => {
             opts.insert(v4::DhcpOption::MessageType(v4::MessageType::Offer));
+            let yiaddr = if req.yiaddr().is_unspecified() {
+                // todo
+                Ipv4Addr::new(192, 168, 0, 1)
+            } else {
+                req.yiaddr()
+            };
+            res.set_secs(0)
+                .set_ciaddr(0)
+                .set_yiaddr(yiaddr)
+                .set_flags(req.flags())
+                .set_giaddr(req.giaddr())
+                .set_chaddr(req.chaddr())
+                .set_sname(b"hizake");
         }
-        _ => {
-            bail!("unimplemented");
+        v4::MessageType::Request => {
+            opts.insert(v4::DhcpOption::MessageType(v4::MessageType::Ack));
+            let yiaddr = if req.yiaddr().is_unspecified() {
+                // todo
+                Ipv4Addr::new(192, 168, 0, 1)
+            } else {
+                req.yiaddr()
+            };
+            res.set_secs(0)
+                .set_ciaddr(0)
+                .set_yiaddr(yiaddr)
+                .set_flags(req.flags())
+                .set_giaddr(req.giaddr())
+                .set_chaddr(req.chaddr())
+                .set_sname(b"hizake");
+        }
+        ty => {
+            bail!("unimplemented type={ty:?}");
         }
     }
-
-    let mut res = Message::default();
     res.set_opcode(Opcode::BootReply)
         .set_htype(req.htype())
         .set_hops(0)
         .set_xid(req.xid())
-        .set_secs(0)
-        .set_ciaddr(0)
-        .set_yiaddr(req.yiaddr())
-        .set_flags(req.flags())
-        .set_giaddr(req.giaddr())
-        .set_chaddr(req.chaddr())
-        .set_sname(b"hizake")
         .set_opts(opts);
 
     let mut buffer = Vec::with_capacity(1024);
