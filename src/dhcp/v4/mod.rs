@@ -25,9 +25,8 @@ fn decode(buffer: &[u8]) -> Result<Message> {
 pub async fn handle_request(
     socket: Arc<UdpSocket>,
     buffer: Vec<u8>,
-    addr: SocketAddr,
+    _addr: SocketAddr,
 ) -> Result<()> {
-    dbg!(addr);
     let req = decode(&buffer)?;
     let Some(req_type) = req.opts().msg_type() else {
         bail!("Message type is not included.");
@@ -95,7 +94,6 @@ pub async fn handle_request(
 
     let mut buffer = Vec::with_capacity(1024);
     let mut encoder = Encoder::new(&mut buffer);
-    dbg!(&req, &res);
     res.encode(&mut encoder)?;
 
     let (dest, is_unicast) = destination(&req, &res);
