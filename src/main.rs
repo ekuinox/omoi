@@ -1,3 +1,4 @@
+mod conf;
 mod dhcp;
 
 use anyhow::Result;
