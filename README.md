@@ -1,6 +1,6 @@
 # omoi
 
-[RFC2131(Dynamic Host Configuration Protocol) 日本語訳](http://srgia.com/docs/rfc2131j.html)DHCPサーバーを実装してみる。
+[RFC2131(Dynamic Host Configuration Protocol) 日本語訳](http://srgia.com/docs/rfc2131j.html)を見ながらDHCPサーバーを実装してみる。
 
 デバッグとかは[saravana815/dhtest](https://github.com/saravana815/dhtest)でやる。
 
