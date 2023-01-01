@@ -5,7 +5,7 @@ use std::{
 
 use anyhow::{bail, Result};
 use dhcproto::{
-    v4::{self, Message, Opcode, OptionCode},
+    v4::{self, Message, Opcode},
     Decodable, Decoder, Encodable, Encoder,
 };
 use tokio::net::UdpSocket;
@@ -111,7 +111,7 @@ pub async fn handle_request(
     Ok(())
 }
 
-fn destination(req: &Message, res: &Message) -> (Ipv4Addr, bool) {
+fn destination(req: &Message, _res: &Message) -> (Ipv4Addr, bool) {
     if req.ciaddr().is_unspecified() {
         return (req.ciaddr(), false);
     }
