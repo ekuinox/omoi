@@ -37,17 +37,28 @@ pub struct Leased4Table {
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Eq, Clone, Debug)]
-pub struct LeasedDetail {
+pub struct Leased4Detail {
     ttl: DateTime<Local>,
     mac_address: MacAddress,
+    ip_addr: Ipv4Addr,
 }
 
 impl Leased4Table {
+    pub fn search_mac_address(&self, mac_address: MacAddress) -> Option<Ipv4Addr> {
+        let detail = self
+            .inner
+            .into_iter()
+            .flatten()
+            .flat_map(|(_, v)| toml::from_slice::<Leased4Detail>(&v))
+            .find(|detail| detail.mac_address == mac_address);
+        detail.map(|detail| detail.ip_addr)
+    }
+
     pub fn is_exist(&self, ip_addr: &Ipv4Addr) -> Result<bool> {
         let Some(v) = self.inner.get(ip_addr.octets())? else {
             return Ok(false);
         };
-        let Ok(detail) = toml::from_slice::<LeasedDetail>(&v) else {
+        let Ok(detail) = toml::from_slice::<Leased4Detail>(&v) else {
             return Ok(false);
         };
         Ok(Local::now() < detail.ttl)
@@ -58,7 +69,11 @@ impl Leased4Table {
         mac_address: MacAddress,
         ttl: DateTime<Local>,
     ) -> Result<Ipv4Addr> {
-        let detail = LeasedDetail { mac_address, ttl };
+        let detail = Leased4Detail {
+            mac_address,
+            ttl,
+            ip_addr,
+        };
         let text = toml::to_string(&detail)?;
         let _ = self.inner.insert(ip_addr.octets(), text.as_bytes())?;
         Ok(ip_addr)

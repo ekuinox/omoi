@@ -2,7 +2,7 @@ use std::{net::Ipv4Addr, ops::Add};
 
 use crate::{
     conf::{Dhcp4SubnetConfig, OMOI_CONFIG},
-    db::Db,
+    db::{Db, Leased4Table},
 };
 use anyhow::{bail, Result};
 use chrono::{Duration, Local};
@@ -54,8 +54,7 @@ impl LeaseRequest {
     }
 }
 
-fn get_free_ip(subnet: &Dhcp4SubnetConfig, mac_address: MacAddress) -> Result<Ipv4Addr> {
-    let db = Db::open().leased()?;
+fn get_free_ip(db: &Leased4Table, subnet: &Dhcp4SubnetConfig, mac_address: MacAddress) -> Result<Ipv4Addr> {
     let range = Ipv4AddrRange::new(subnet.range.0, subnet.range.1);
     for target in range {
         let Ok(false) = db.is_exist(&target) else {
@@ -73,7 +72,10 @@ fn get_free_ip(subnet: &Dhcp4SubnetConfig, mac_address: MacAddress) -> Result<Ip
 }
 
 fn get_new_ip(subnet: &Dhcp4SubnetConfig, mac_address: MacAddress) -> Result<Ipv4Addr> {
-    // TODO: とりあえず mac_address から過去に割り当たってないか探す
-    let ip = get_free_ip(subnet, mac_address)?;
+    let db = Db::open().leased()?;
+    if let Some(ip_addr) = db.search_mac_address(mac_address) {
+        return Ok(ip_addr);
+    }
+    let ip = get_free_ip(&db, subnet, mac_address)?;
     Ok(ip)
 }
