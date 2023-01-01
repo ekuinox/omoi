@@ -1,6 +1,9 @@
 [common]
 database-dir = "omoi-db"
 
+[debug]
+hw-prefix = [0, 0, 0]
+
 [dhcp4]
 domain-name = "example.local"
 

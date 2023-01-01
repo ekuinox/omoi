@@ -15,6 +15,12 @@ pub static OMOI_CONFIG: Lazy<OmoiConfig> = Lazy::new(|| OmoiConfig::load());
 
 #[derive(Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(rename_all = "kebab-case")]
+pub struct DebugConfig {
+    pub hw_prefix: Option<Vec<u8>>,
+}
+
+#[derive(Deserialize, Clone, PartialEq, Eq, Debug)]
+#[serde(rename_all = "kebab-case")]
 pub struct CommonConfig {
     pub database_dir: PathBuf,
 }
@@ -53,6 +59,7 @@ pub struct Dhcp4Config {
 pub struct OmoiConfig {
     pub common: CommonConfig,
     pub dhcp4: Dhcp4Config,
+    pub debug: Option<DebugConfig>,
 }
 
 impl OmoiConfig {
@@ -83,6 +90,9 @@ fn parse_test() {
     const TOML_TEXT: &str = r#"
 [common]
 database-dir = "omoi-db"
+
+[debug]
+hw-prefix = [0, 0, 0]
 
 [dhcp4]
 domain-name = "example.local"
@@ -124,6 +134,9 @@ fixed-address = "192.168.0.11"
                 fixed_address: Ipv4Addr::new(192, 168, 0, 11),
             }],
         },
+        debug: Some(DebugConfig {
+            hw_prefix: Some(vec![0x00, 0x00, 0x00]),
+        }),
     };
 
     let config = toml::from_str::<OmoiConfig>(TOML_TEXT);

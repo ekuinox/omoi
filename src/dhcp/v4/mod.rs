@@ -12,7 +12,7 @@ use std::{
 };
 use tokio::net::UdpSocket;
 
-use crate::dhcp::v4::lease::LeaseRequest;
+use crate::{conf::OMOI_CONFIG, dhcp::v4::lease::LeaseRequest};
 
 pub const BUFFER_SIZE: usize = 1024;
 
@@ -34,9 +34,14 @@ pub async fn handle_request(
 
     let mut opts = v4::DhcpOptions::new();
 
-    // 後で消す
-    if !req.chaddr().starts_with(&[0, 0, 0]) {
-        bail!("not target");
+    if let Some(hw_prefix) = OMOI_CONFIG
+        .debug
+        .as_ref()
+        .and_then(|c| c.hw_prefix.as_ref())
+    {
+        if !req.chaddr().starts_with(hw_prefix) {
+            bail!("Not target")
+        }
     }
 
     let mut res = Message::default();
