@@ -28,7 +28,7 @@ pub struct Dhcp4SubnetConfig {
     pub domain_name_servers: Vec<Ipv4Addr>,
     pub routers: Vec<Ipv4Addr>,
     pub broadcast_address: Ipv4Addr,
-    pub max_lease_time: u64,
+    pub address_lease_time: u32,
 }
 
 #[derive(Deserialize, Clone, PartialEq, Eq, Debug)]
@@ -94,7 +94,7 @@ range = ["192.168.0.101", "192.168.0.250"]
 domain-name-servers = ["192.168.0.1"]
 routers = ["192.168.0.1"]
 broadcast-address = "192.168.0.255"
-max-lease-time = 172800
+address-lease-time = 172800
 
 [[dhcp4.host]]
 name = "host1"
@@ -116,7 +116,7 @@ fixed-address = "192.168.0.11"
                 domain_name_servers: vec![Ipv4Addr::new(192, 168, 0, 1)],
                 routers: vec![Ipv4Addr::new(192, 168, 0, 1)],
                 broadcast_address: Ipv4Addr::new(192, 168, 0, 255),
-                max_lease_time: 172800,
+                address_lease_time: 172800,
             }],
             hosts: vec![Dhcp4HostConfig {
                 name: "host1".to_string(),

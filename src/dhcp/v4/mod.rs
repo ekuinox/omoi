@@ -1,14 +1,18 @@
-use std::{
-    net::{Ipv4Addr, SocketAddr},
-    sync::Arc,
-};
+mod lease;
 
 use anyhow::{bail, Result};
 use dhcproto::{
     v4::{self, Message, Opcode},
     Decodable, Decoder, Encodable, Encoder,
 };
+use mac_address::MacAddress;
+use std::{
+    net::{Ipv4Addr, SocketAddr},
+    sync::Arc,
+};
 use tokio::net::UdpSocket;
+
+use crate::dhcp::v4::lease::LeaseRequest;
 
 pub const BUFFER_SIZE: usize = 1024;
 
@@ -30,22 +34,6 @@ pub async fn handle_request(
     };
 
     let mut opts = v4::DhcpOptions::new();
-    if let Some(v4::DhcpOption::ParameterRequestList(params)) =
-        req.opts().get(v4::OptionCode::ParameterRequestList)
-    {
-        for code in params {
-            match code {
-                v4::OptionCode::BroadcastAddr => {
-                    opts.insert(v4::DhcpOption::BroadcastAddr(Ipv4Addr::new(
-                        192, 168, 0, 255,
-                    )));
-                }
-                code => {
-                    dbg!(code);
-                }
-            }
-        }
-    }
 
     // 後で消す
     if !req.chaddr().starts_with(&[0, 0, 0]) {
@@ -56,35 +44,44 @@ pub async fn handle_request(
     match req_type {
         v4::MessageType::Discover => {
             opts.insert(v4::DhcpOption::MessageType(v4::MessageType::Offer));
-            let yiaddr = if req.yiaddr().is_unspecified() {
-                // todo
-                Ipv4Addr::new(192, 168, 0, 1)
-            } else {
-                req.yiaddr()
-            };
             res.set_secs(0)
                 .set_ciaddr(0)
-                .set_yiaddr(yiaddr)
+                .set_yiaddr(req.yiaddr())
                 .set_flags(req.flags())
                 .set_giaddr(req.giaddr())
-                .set_chaddr(req.chaddr())
-                .set_sname(b"hizake");
+                .set_chaddr(req.chaddr());
         }
         v4::MessageType::Request => {
-            opts.insert(v4::DhcpOption::MessageType(v4::MessageType::Ack));
-            let yiaddr = if req.yiaddr().is_unspecified() {
-                // todo
-                Ipv4Addr::new(192, 168, 0, 1)
-            } else {
-                req.yiaddr()
-            };
-            res.set_secs(0)
-                .set_ciaddr(0)
-                .set_yiaddr(yiaddr)
-                .set_flags(req.flags())
-                .set_giaddr(req.giaddr())
-                .set_chaddr(req.chaddr())
-                .set_sname(b"hizake");
+            let chaddr = req.chaddr();
+            let resp = LeaseRequest::new(MacAddress::new([
+                chaddr[0], chaddr[1], chaddr[2], chaddr[3], chaddr[4], chaddr[5],
+            ]))
+            .request();
+            match resp {
+                Ok(resp) => {
+                    opts.insert(v4::DhcpOption::MessageType(v4::MessageType::Ack));
+                    opts.insert(v4::DhcpOption::BroadcastAddr(resp.broadcast_address));
+                    opts.insert(v4::DhcpOption::DomainNameServer(resp.domain_name_servers));
+                    opts.insert(v4::DhcpOption::Router(resp.routers));
+                    opts.insert(v4::DhcpOption::AddressLeaseTime(resp.address_lease_time));
+                    res.set_secs(0)
+                        .set_ciaddr(0)
+                        .set_yiaddr(resp.ip_addr)
+                        .set_flags(req.flags())
+                        .set_giaddr(req.giaddr())
+                        .set_chaddr(req.chaddr());
+                }
+                Err(e) => {
+                    eprintln!("{e}");
+                    opts.insert(v4::DhcpOption::MessageType(v4::MessageType::Nak));
+                    res.set_secs(0)
+                        .set_ciaddr(0)
+                        .set_yiaddr(0)
+                        .set_flags(req.flags())
+                        .set_giaddr(req.giaddr())
+                        .set_chaddr(req.chaddr());
+                }
+            }
         }
         ty => {
             bail!("unimplemented type={ty:?}");
