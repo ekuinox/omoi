@@ -1,18 +1,29 @@
-mod lease;
+mod discover;
+mod request;
 
-use crate::{conf::OMOI_CONFIG, dhcp::v4::lease::LeaseRequest};
+use crate::{
+    conf::{OmoiConfig, OMOI_CONFIG},
+    db::Db,
+};
 use anyhow::{bail, Result};
+use async_trait::async_trait;
+use chrono::{DateTime, Duration, Local};
 use dhcproto::{
-    v4::{self, Message, Opcode},
-    Decodable, Decoder, Encodable, Encoder,
+    v4::{self, Message},
+    Decodable, Decoder,
 };
 use std::{
+    collections::{HashMap, HashSet},
     net::{Ipv4Addr, SocketAddr},
-    sync::Arc,
+    ops::Add,
+    sync::{Arc, Mutex},
 };
 use tokio::net::UdpSocket;
 
+use self::{discover::DiscoverHandler, request::RequestHandler};
+
 pub const BUFFER_SIZE: usize = 1024;
+pub const TRANSACTION_EXPIRATION_HOURS: i64 = 1;
 
 fn decode(buffer: &[u8]) -> Result<Message> {
     let mut decoder = Decoder::new(buffer);
@@ -20,114 +31,110 @@ fn decode(buffer: &[u8]) -> Result<Message> {
     Ok(message)
 }
 
-pub async fn handle_request(
-    socket: Arc<UdpSocket>,
-    buffer: Vec<u8>,
-    _addr: SocketAddr,
-) -> Result<()> {
-    let req = decode(&buffer)?;
-    let Some(req_type) = req.opts().msg_type() else {
-        bail!("Message type is not included.");
+pub async fn handle_request(context: Context, buffer: Vec<u8>, _addr: SocketAddr) -> Result<()> {
+    let message = decode(&buffer)?;
+    let request = Request {
+        message: Arc::new(message),
+        context,
     };
 
-    let mut opts = v4::DhcpOptions::new();
-
-    if let Some(hw_prefix) = OMOI_CONFIG
-        .debug
-        .as_ref()
-        .and_then(|c| c.hw_prefix.as_ref())
-    {
-        if !req.chaddr().starts_with(hw_prefix) {
-            bail!("Not target")
-        }
+    if let Ok(_) = DiscoverHandler.handle(request.clone()).await {
+        return Ok(());
     }
-
-    let mut res = Message::default();
-    match req_type {
-        v4::MessageType::Discover => {
-            let resp = LeaseRequest::new(req.xid(), req.chaddr().to_vec()).offer()?;
-            opts.insert(v4::DhcpOption::MessageType(v4::MessageType::Offer));
-            opts.insert(v4::DhcpOption::BroadcastAddr(resp.broadcast_address));
-            opts.insert(v4::DhcpOption::DomainNameServer(resp.domain_name_servers));
-            opts.insert(v4::DhcpOption::Router(resp.routers));
-            opts.insert(v4::DhcpOption::AddressLeaseTime(resp.address_lease_time));
-            res.set_secs(0)
-                .set_ciaddr(0)
-                .set_yiaddr(resp.ip_addr)
-                .set_flags(req.flags())
-                .set_giaddr(req.giaddr())
-                .set_chaddr(req.chaddr());
-        }
-        v4::MessageType::Request => {
-            let resp = LeaseRequest::new(req.xid(), req.chaddr().to_vec()).ack();
-            match resp {
-                Ok(resp) => {
-                    opts.insert(v4::DhcpOption::MessageType(v4::MessageType::Ack));
-                    opts.insert(v4::DhcpOption::BroadcastAddr(resp.broadcast_address));
-                    opts.insert(v4::DhcpOption::DomainNameServer(resp.domain_name_servers));
-                    opts.insert(v4::DhcpOption::Router(resp.routers));
-                    opts.insert(v4::DhcpOption::AddressLeaseTime(resp.address_lease_time));
-                    res.set_secs(0)
-                        .set_ciaddr(0)
-                        .set_yiaddr(resp.ip_addr)
-                        .set_flags(req.flags())
-                        .set_giaddr(req.giaddr())
-                        .set_chaddr(req.chaddr());
-                }
-                Err(e) => {
-                    eprintln!("{e}");
-                    opts.insert(v4::DhcpOption::MessageType(v4::MessageType::Nak));
-                    res.set_secs(0)
-                        .set_ciaddr(0)
-                        .set_yiaddr(0)
-                        .set_flags(req.flags())
-                        .set_giaddr(req.giaddr())
-                        .set_chaddr(req.chaddr());
-                }
-            }
-        }
-        ty => {
-            bail!("unimplemented type={ty:?}");
-        }
+    if let Ok(_) = RequestHandler.handle(request).await {
+        return Ok(());
     }
-    res.set_opcode(Opcode::BootReply)
-        .set_htype(req.htype())
-        .set_hops(0)
-        .set_xid(req.xid())
-        .set_opts(opts);
-
-    let mut buffer = Vec::with_capacity(1024);
-    let mut encoder = Encoder::new(&mut buffer);
-    res.encode(&mut encoder)?;
-
-    let (dest, is_unicast) = destination(&req, &res);
-    if is_unicast {
-        todo!()
-    }
-
-    socket.send_to(&buffer, (dest, v4::CLIENT_PORT)).await?;
 
     Ok(())
 }
 
-fn destination(req: &Message, _res: &Message) -> (Ipv4Addr, bool) {
-    if req.ciaddr().is_unspecified() {
-        return (req.ciaddr(), false);
+#[derive(PartialEq, Eq, Debug)]
+pub struct Transaction {
+    xid: u32,
+    offered_ipv4_addr: Ipv4Addr,
+    created_at: DateTime<Local>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Transactions(Arc<Mutex<HashMap<u32, Transaction>>>);
+
+impl Transactions {
+    pub fn new() -> Transactions {
+        Transactions(Arc::new(Mutex::new(HashMap::new())))
     }
-    todo!()
+    pub fn new_transaction(&self, xid: u32, offered_ipv4_addr: Ipv4Addr) -> Result<()> {
+        let Ok(mut transactions) = self.0.lock() else {
+            bail!("transactions lock failed");
+        };
+        transactions.insert(
+            xid,
+            Transaction {
+                xid,
+                offered_ipv4_addr,
+                created_at: Local::now(),
+            },
+        );
+        Ok(())
+    }
+    pub fn remove(&self, xid: u32) -> Result<Transaction> {
+        let Ok(mut transactions) = self.0.lock() else {
+            bail!("transactions lock failed");
+        };
+        let Some(transaction) = transactions.remove(&xid) else {
+            bail!("transaction xid={xid} not found");
+        };
+        Ok(transaction)
+    }
+    pub fn offered_ipv4_addresses(&self) -> Result<HashSet<Ipv4Addr>> {
+        let Ok(transactions) = self.0.lock() else {
+            bail!("transaction lock failed");
+        };
+        let now = Local::now();
+        let duration = Duration::hours(TRANSACTION_EXPIRATION_HOURS);
+        Ok(transactions
+            .iter()
+            .filter(|(_, t)| now < t.created_at.add(duration))
+            .map(|(_, t)| t.offered_ipv4_addr)
+            .collect())
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct Request {
+    pub context: Context,
+    pub message: Arc<v4::Message>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Context {
+    pub db: Db,
+    pub config: Arc<OmoiConfig>,
+    pub transactions: Transactions,
+    pub socket: Arc<UdpSocket>,
+}
+
+#[async_trait]
+pub trait Handler {
+    async fn handle(&self, request: Request) -> Result<()>;
 }
 
 pub async fn serve() -> Result<()> {
     let socket = UdpSocket::bind((Ipv4Addr::new(0, 0, 0, 0), v4::SERVER_PORT)).await?;
     socket.set_broadcast(true)?;
     let socket = Arc::new(socket);
+    let context = Context {
+        db: Db::open(),
+        config: Arc::new(OMOI_CONFIG.clone()),
+        transactions: Transactions::new(),
+        socket,
+    };
 
     loop {
+        let context = context.clone();
         let mut buffer = vec![0u8; BUFFER_SIZE];
-        let (_size, addr) = socket.recv_from(&mut buffer).await?;
-        let socket = socket.clone();
+        let (_size, addr) = context.socket.recv_from(&mut buffer).await?;
         tokio::spawn(async move {
-            if let Err(e) = handle_request(socket, buffer, addr).await {
+            if let Err(e) = handle_request(context, buffer, addr).await {
                 eprintln!("{e}");
             }
         });

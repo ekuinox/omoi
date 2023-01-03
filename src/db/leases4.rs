@@ -1,4 +1,4 @@
-use std::net::Ipv4Addr;
+use std::{collections::HashSet, net::Ipv4Addr};
 
 use anyhow::{bail, Result};
 use chrono::{DateTime, Local};
@@ -62,22 +62,28 @@ impl Leases4Tree {
             .collect()
     }
 
-    pub fn suggest(&self, hw_address: &[u8], start: Ipv4Addr, end: Ipv4Addr) -> Result<Ipv4Addr> {
+    pub fn suggest(
+        &self,
+        hw_address: &[u8],
+        start: Ipv4Addr,
+        end: Ipv4Addr,
+        excludes: HashSet<Ipv4Addr>,
+    ) -> Result<Ipv4Addr> {
         if let Ok(record) = self.get_by_hw(hw_address) {
             return Ok(record.ip_addr);
         }
 
-        for addr in Ipv4AddrRange::new(start, end) {
-            if self
-                .get_by_ip(&addr)
-                .map(|record| record.is_expired())
-                .unwrap_or(true)
-            // 壊れているレコードは空きとみなす
-            {
-                return Ok(addr);
-            }
-        }
-        bail!("No empty address");
+        let addr = Ipv4AddrRange::new(start, end)
+            .into_iter()
+            .filter(|addr| excludes.contains(&addr))
+            .find(|addr| {
+                // 壊れているレコードは空きとみなす
+                self.get_by_ip(&addr).map(|record| record.is_expired()).ok() != Some(false)
+            });
+        let Some(addr) = addr else {
+            bail!("No empty address");
+        };
+        Ok(addr)
     }
 
     pub fn acquire(
