@@ -4,6 +4,9 @@ database-dir = "omoi-db"
 [debug]
 hw-prefix = [0, 0, 0]
 
+[http]
+addr = "0.0.0.0:11003"
+
 [dhcp4]
 domain-name = "example.local"
 

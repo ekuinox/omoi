@@ -5,7 +5,7 @@ use serde::Deserialize;
 use std::{
     fs::File,
     io::{BufReader, Read},
-    net::Ipv4Addr,
+    net::{Ipv4Addr, SocketAddr},
     path::PathBuf,
 };
 
@@ -23,6 +23,12 @@ pub struct DebugConfig {
 #[serde(rename_all = "kebab-case")]
 pub struct CommonConfig {
     pub database_dir: PathBuf,
+}
+
+#[derive(Deserialize, Clone, PartialEq, Eq, Debug)]
+#[serde(rename_all = "kebab-case")]
+pub struct HttpConfig {
+    pub addr: SocketAddr,
 }
 
 #[derive(Deserialize, Clone, PartialEq, Eq, Debug)]
@@ -60,6 +66,7 @@ pub struct OmoiConfig {
     pub common: CommonConfig,
     pub dhcp4: Dhcp4Config,
     pub debug: Option<DebugConfig>,
+    pub http: HttpConfig,
 }
 
 impl OmoiConfig {
@@ -92,6 +99,9 @@ database-dir = "omoi-db"
 
 [debug]
 hw-prefix = [0, 0, 0]
+
+[http]
+addr = "0.0.0.0:11003"
 
 [dhcp4]
 domain-name = "example.local"
@@ -136,6 +146,9 @@ fixed-address = "192.168.0.11"
         debug: Some(DebugConfig {
             hw_prefix: Some(vec![0x00, 0x00, 0x00]),
         }),
+        http: HttpConfig {
+            addr: SocketAddr::from(([0, 0, 0, 0], 11003)),
+        },
     };
 
     let config = toml::from_str::<OmoiConfig>(TOML_TEXT);
