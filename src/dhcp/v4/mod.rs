@@ -6,7 +6,6 @@ use dhcproto::{
     v4::{self, Message, Opcode},
     Decodable, Decoder, Encodable, Encoder,
 };
-use mac_address::MacAddress;
 use std::{
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
@@ -46,20 +45,21 @@ pub async fn handle_request(
     let mut res = Message::default();
     match req_type {
         v4::MessageType::Discover => {
+            let resp = LeaseRequest::new(req.xid(), req.chaddr().to_vec()).offer()?;
             opts.insert(v4::DhcpOption::MessageType(v4::MessageType::Offer));
+            opts.insert(v4::DhcpOption::BroadcastAddr(resp.broadcast_address));
+            opts.insert(v4::DhcpOption::DomainNameServer(resp.domain_name_servers));
+            opts.insert(v4::DhcpOption::Router(resp.routers));
+            opts.insert(v4::DhcpOption::AddressLeaseTime(resp.address_lease_time));
             res.set_secs(0)
                 .set_ciaddr(0)
-                .set_yiaddr(req.yiaddr())
+                .set_yiaddr(resp.ip_addr)
                 .set_flags(req.flags())
                 .set_giaddr(req.giaddr())
                 .set_chaddr(req.chaddr());
         }
         v4::MessageType::Request => {
-            let chaddr = req.chaddr();
-            let resp = LeaseRequest::new(MacAddress::new([
-                chaddr[0], chaddr[1], chaddr[2], chaddr[3], chaddr[4], chaddr[5],
-            ]))
-            .request();
+            let resp = LeaseRequest::new(req.xid(), req.chaddr().to_vec()).ack();
             match resp {
                 Ok(resp) => {
                     opts.insert(v4::DhcpOption::MessageType(v4::MessageType::Ack));
