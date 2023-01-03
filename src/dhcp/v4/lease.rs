@@ -1,5 +1,3 @@
-use std::{net::Ipv4Addr, ops::Add};
-
 use crate::{
     conf::{Dhcp4SubnetConfig, OMOI_CONFIG},
     db::{Db, Leased4Table},
@@ -8,6 +6,7 @@ use anyhow::{bail, Result};
 use chrono::{Duration, Local};
 use ipnet::Ipv4AddrRange;
 use mac_address::MacAddress;
+use std::{net::Ipv4Addr, ops::Add};
 
 pub struct LeaseRequest {
     mac_address: MacAddress,
@@ -39,7 +38,7 @@ impl LeaseRequest {
             .find(|host| host.hardware_ethernet == self.mac_address);
         let ip_addr = match host {
             Some(host) => host.fixed_address,
-            None => get_new_ip(&subnet, self.mac_address)?,
+            None => get_new_ip(subnet, self.mac_address)?,
         };
         let resp = LeasedResponse {
             mac_address: self.mac_address,
@@ -54,7 +53,11 @@ impl LeaseRequest {
     }
 }
 
-fn get_free_ip(db: &Leased4Table, subnet: &Dhcp4SubnetConfig, mac_address: MacAddress) -> Result<Ipv4Addr> {
+fn get_free_ip(
+    db: &Leased4Table,
+    subnet: &Dhcp4SubnetConfig,
+    mac_address: MacAddress,
+) -> Result<Ipv4Addr> {
     let range = Ipv4AddrRange::new(subnet.range.0, subnet.range.1);
     for target in range {
         let Ok(false) = db.is_exist(&target) else {

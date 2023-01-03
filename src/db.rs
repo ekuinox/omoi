@@ -16,8 +16,7 @@ impl Db {
         Ok(Db { inner })
     }
     pub fn open() -> Db {
-        let db = Self::try_open(&OMOI_CONFIG.common.database_dir).expect("open db error");
-        db
+        Self::try_open(&OMOI_CONFIG.common.database_dir).expect("open db error")
     }
     pub fn leased(&self) -> Result<Leased4Table> {
         let tree = self.open_tree("LEASED4")?;

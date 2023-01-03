@@ -11,7 +11,7 @@ use std::{
 
 const DEFAULT_OMOI_CONFIG_PATH: &str = "/etc/omoi.conf";
 const OMOI_CONFIG_PATH_ENV_KEY: &str = "OMOI_CONFIG_PATH";
-pub static OMOI_CONFIG: Lazy<OmoiConfig> = Lazy::new(|| OmoiConfig::load());
+pub static OMOI_CONFIG: Lazy<OmoiConfig> = Lazy::new(OmoiConfig::load);
 
 #[derive(Deserialize, Clone, PartialEq, Eq, Debug)]
 #[serde(rename_all = "kebab-case")]
@@ -79,8 +79,7 @@ impl OmoiConfig {
         Ok(config)
     }
     fn load() -> OmoiConfig {
-        let config = Self::try_load().expect("OmoiConfig Read Error");
-        config
+        Self::try_load().expect("OmoiConfig Read Error")
     }
 }
 

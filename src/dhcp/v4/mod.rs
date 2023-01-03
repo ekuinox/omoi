@@ -1,5 +1,6 @@
 mod lease;
 
+use crate::{conf::OMOI_CONFIG, dhcp::v4::lease::LeaseRequest};
 use anyhow::{bail, Result};
 use dhcproto::{
     v4::{self, Message, Opcode},
@@ -11,8 +12,6 @@ use std::{
     sync::Arc,
 };
 use tokio::net::UdpSocket;
-
-use crate::{conf::OMOI_CONFIG, dhcp::v4::lease::LeaseRequest};
 
 pub const BUFFER_SIZE: usize = 1024;
 
