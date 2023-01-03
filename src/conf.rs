@@ -9,7 +9,7 @@ use std::{
     path::PathBuf,
 };
 
-const DEFAULT_OMOI_CONFIG_PATH: &str = "/etc/omoi.conf";
+const DEFAULT_OMOI_CONFIG_PATH: &str = "/etc/omoi.toml";
 const OMOI_CONFIG_PATH_ENV_KEY: &str = "OMOI_CONFIG_PATH";
 pub static OMOI_CONFIG: Lazy<OmoiConfig> = Lazy::new(OmoiConfig::load);
 
