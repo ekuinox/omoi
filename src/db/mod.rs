@@ -6,6 +6,8 @@ use std::{ops::Deref, path::Path};
 use self::leases4::Leases4Tree;
 use crate::conf::OMOI_CONFIG;
 
+pub use self::leases4::Leases4Record;
+
 #[derive(Clone, Debug)]
 pub struct Db {
     inner: sled::Db,

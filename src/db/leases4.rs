@@ -54,12 +54,15 @@ impl Leases4Tree {
         bail!("Not found");
     }
 
-    pub fn suggest(
-        &self,
-        hw_address: &[u8],
-        start: Ipv4Addr,
-        end: Ipv4Addr,
-    ) -> Result<Ipv4Addr> {
+    pub fn all(&self) -> Vec<Leases4Record> {
+        self.inner
+            .into_iter()
+            .flatten()
+            .flat_map(|(_, value)| bincode::deserialize(&value))
+            .collect()
+    }
+
+    pub fn suggest(&self, hw_address: &[u8], start: Ipv4Addr, end: Ipv4Addr) -> Result<Ipv4Addr> {
         if let Ok(record) = self.get_by_hw(hw_address) {
             return Ok(record.ip_addr);
         }
@@ -68,7 +71,8 @@ impl Leases4Tree {
             if self
                 .get_by_ip(&addr)
                 .map(|record| record.is_expired())
-                .unwrap_or(true) // 壊れているレコードは空きとみなす
+                .unwrap_or(true)
+            // 壊れているレコードは空きとみなす
             {
                 return Ok(addr);
             }
@@ -76,7 +80,12 @@ impl Leases4Tree {
         bail!("No empty address");
     }
 
-    pub fn acquire(&self, hw_addr: Vec<u8>, ip_addr: Ipv4Addr, ttl: DateTime<Local>) -> Result<Leases4Record> {
+    pub fn acquire(
+        &self,
+        hw_addr: Vec<u8>,
+        ip_addr: Ipv4Addr,
+        ttl: DateTime<Local>,
+    ) -> Result<Leases4Record> {
         let key = Self::generate_key(&ip_addr);
         let record = Leases4Record {
             hardware_address: hw_addr,
